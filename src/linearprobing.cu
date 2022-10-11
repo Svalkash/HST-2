@@ -15,21 +15,29 @@ __device__ uint32_t hash(uint32_t k)
 }
 
 // Create a hash table. For linear probing, this is just an array of KeyValues
-KeyValue* create_hashtable() 
+HashTable create_hashtable() 
 {
     // Allocate memory
     KeyValue* hashtable;
+    uint32_t* size;
     cudaMalloc(&hashtable, sizeof(KeyValue) * kHashTableCapacity);
+    cudaMalloc(&size, sizeof(uint32_t));
 
     // Initialize hash table to empty
     static_assert(kEmpty == 0xffffffff, "memset expected kEmpty=0xffffffff");
     cudaMemset(hashtable, 0xff, sizeof(KeyValue) * kHashTableCapacity);
+    cudaMemset(size, 0x0, sizeof(uint32_t));
 
-    return hashtable;
+    uint32_t size1;
+    cudaMemcpy(size, &size1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    printf("    space used: %d\n", size1);
+
+
+    return { hashtable, size };
 }
 
 // Insert the key/values in kvs into the hashtable
-__global__ void gpu_hashtable_insert(KeyValue* hashtable, const KeyValue* kvs, unsigned int numkvs)
+__global__ void gpu_hashtable_insert(KeyValue* hashtable, const KeyValue* kvs, unsigned int numkvs, uint32_t *size)
 {
     unsigned int threadid = blockIdx.x*blockDim.x + threadIdx.x;
     if (threadid < numkvs)
@@ -41,6 +49,8 @@ __global__ void gpu_hashtable_insert(KeyValue* hashtable, const KeyValue* kvs, u
         while (true)
         {
             uint32_t prev = atomicCAS(&hashtable[slot].key, kEmpty, key);
+            if (prev == kEmpty)
+                atomicAdd(size, 1); //new key space used
             if (prev == kEmpty || prev == key)
             {
                 hashtable[slot].value = value;
@@ -52,7 +62,7 @@ __global__ void gpu_hashtable_insert(KeyValue* hashtable, const KeyValue* kvs, u
     }
 }
  
-void insert_hashtable(KeyValue* pHashTable, const KeyValue* kvs, uint32_t num_kvs)
+void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
 {
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
@@ -73,7 +83,7 @@ void insert_hashtable(KeyValue* pHashTable, const KeyValue* kvs, uint32_t num_kv
 
     // Insert all the keys into the hash table
     int gridsize = ((uint32_t)num_kvs + threadblocksize - 1) / threadblocksize;
-    gpu_hashtable_insert<<<gridsize, threadblocksize>>>(pHashTable, device_kvs, (uint32_t)num_kvs);
+    gpu_hashtable_insert<<<gridsize, threadblocksize>>>(ht.hashtable, device_kvs, (uint32_t)num_kvs, ht.size);
 
     cudaEventRecord(stop);
 
@@ -84,6 +94,10 @@ void insert_hashtable(KeyValue* pHashTable, const KeyValue* kvs, uint32_t num_kv
     float seconds = milliseconds / 1000.0f;
     printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
         num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+
+    uint32_t size;
+    cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    printf("    space used: %d\n", size);
 
     cudaFree(device_kvs);
 }
@@ -114,8 +128,10 @@ __global__ void gpu_hashtable_lookup(KeyValue* hashtable, KeyValue* kvs, unsigne
     }
 }
 
-void lookup_hashtable(KeyValue* pHashTable, KeyValue* kvs, uint32_t num_kvs)
+void lookup_hashtable(HashTable& ht, KeyValue* kvs, uint32_t num_kvs)
 {
+    KeyValue* pHashTable = ht.hashtable;
+
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
     cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
@@ -135,7 +151,7 @@ void lookup_hashtable(KeyValue* pHashTable, KeyValue* kvs, uint32_t num_kvs)
 
     // Insert all the keys into the hash table
     int gridsize = ((uint32_t)num_kvs + threadblocksize - 1) / threadblocksize;
-    gpu_hashtable_insert << <gridsize, threadblocksize >> > (pHashTable, device_kvs, (uint32_t)num_kvs);
+    gpu_hashtable_insert << <gridsize, threadblocksize >> > (pHashTable, device_kvs, (uint32_t)num_kvs, ht.size);
 
     cudaEventRecord(stop);
 
@@ -177,8 +193,9 @@ __global__ void gpu_hashtable_delete(KeyValue* hashtable, const KeyValue* kvs, u
     }
 }
 
-void delete_hashtable(KeyValue* pHashTable, const KeyValue* kvs, uint32_t num_kvs)
+void delete_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
 {
+    KeyValue* pHashTable = ht.hashtable;
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
     cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
@@ -231,8 +248,9 @@ __global__ void gpu_iterate_hashtable(KeyValue* pHashTable, KeyValue* kvs, uint3
     }
 }
 
-std::vector<KeyValue> iterate_hashtable(KeyValue* pHashTable)
+std::vector<KeyValue> iterate_hashtable(HashTable &ht)
 {
+    KeyValue* pHashTable = ht.hashtable;
     uint32_t* device_num_kvs;
     cudaMalloc(&device_num_kvs, sizeof(uint32_t));
     cudaMemset(device_num_kvs, 0, sizeof(uint32_t));
@@ -262,7 +280,8 @@ std::vector<KeyValue> iterate_hashtable(KeyValue* pHashTable)
 }
 
 // Free the memory of the hashtable
-void destroy_hashtable(KeyValue* pHashTable)
+void destroy_hashtable(HashTable &ht)
 {
-    cudaFree(pHashTable);
+    cudaFree(ht.hashtable);
+    cudaFree(ht.size);
 }
