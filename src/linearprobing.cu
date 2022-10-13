@@ -31,6 +31,7 @@ HashTable create_hashtable(uint32_t capacity)
     uint32_t size1;
     cudaMemcpy(size, &size1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
     printf("    space used: %d\n", size1);
+    printf("    base cap: %d\n", capacity);
 
     return { hashtable, size, capacity };
 }
@@ -63,6 +64,9 @@ __global__ void gpu_hashtable_insert(HashTable ht, const KeyValue* kvs, unsigned
  
 void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
 {
+    //first check the size and capacity
+    check_hashtable(ht);
+
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
     cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
@@ -94,9 +98,8 @@ void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
     printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
         num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
-    uint32_t size;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("    space used: %d\n", size);
+    printf("    space used: %d (%f%%)\n", size, (float)size/ht.capacity);
 
     cudaFree(device_kvs);
 }
@@ -129,6 +132,9 @@ __global__ void gpu_hashtable_lookup(HashTable ht, KeyValue* kvs, unsigned int n
 
 void lookup_hashtable(HashTable& ht, KeyValue* kvs, uint32_t num_kvs)
 {
+    //first check the size and capacity
+    check_hashtable(ht);
+
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
     cudaMalloc(&device_kvs, sizeof(KeyValue) * num_kvs);
@@ -350,10 +356,19 @@ void resize_hashtable(HashTable& ht, uint32_t resize_k)
 
     uint32_t size;
     cudaMemcpy(&size, new_ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("    space used: %d\n", size);
+    printf("    resized, new capacity is %d\n", new_ht.capacity);
+    printf("    space used: %d (%f%%)\n", size, (float)size/new_ht.capacity);
 
     //nuke the old table and reassign it to the new one
     cudaFree(ht.hashtable);
     cudaFree(ht.size);
     ht = new_ht;
+}
+
+void check_hashtable(HashTable &ht, float resize_thres = 0.7) {
+    if (resize_thres > 1.0) return;
+    uint32_t size;
+    cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    if (size > ht.capacity * resize_thres)
+        resize_hashtable(ht);
 }

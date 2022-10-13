@@ -27,3 +27,5 @@ std::vector<KeyValue> iterate_hashtable(HashTable& ht);
 void destroy_hashtable(HashTable& ht);
 
 void resize_hashtable(HashTable& ht, uint32_t resize_k = 2);
+
+void check_hashtable(HashTable &ht, float resize_thres = 0.7); //set thres to >1.0 to disable
