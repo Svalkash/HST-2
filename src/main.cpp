@@ -56,7 +56,7 @@ double get_elapsed_time(Time start)
     return us.count() / 1000.0f;
 }
 
-void test_unordered_map(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> delete_kvs) 
+void test_unordered_map(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> delete_kvs, uint32_t size) 
 {
     Time timer = start_timer();
 
@@ -79,13 +79,14 @@ void test_unordered_map(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> 
     double milliseconds = get_elapsed_time(timer);
     double seconds = milliseconds / 1000.0f;
     printf("Total time for std::unordered_map: %f ms (%f million keys/second)\n", 
-        milliseconds, kNumKeyValues / seconds / 1000000.0f);
+        milliseconds, size / seconds / 1000000.0f);
 }
 
 void test_correctness(std::vector<KeyValue>, std::vector<KeyValue>, std::vector<KeyValue>);
 
 int main() 
 {
+    uint32_t default_cap = 128 * 1024 * 1024;
     // To recreate the same random numbers across runs of the program, set seed to a specific
     // number instead of a number from random_device
     std::random_device rd;
@@ -98,8 +99,8 @@ int main()
     {
         printf("Initializing keyvalue pairs with random numbers...\n");
 
-        std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, kNumKeyValues);
-        std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, kNumKeyValues / 2);
+        std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, default_cap/2);
+        std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, default_cap/4);
 
         // Begin test
         printf("Testing insertion/deletion of %d/%d elements into GPU hash table...\n",
@@ -134,9 +135,9 @@ int main()
         double milliseconds = get_elapsed_time(timer);
         double seconds = milliseconds / 1000.0f;
         printf("Total time (including memory copies, readback, etc): %f ms (%f million keys/second)\n", milliseconds,
-            kNumKeyValues / seconds / 1000000.0f);
+            default_cap/2 / seconds / 1000000.0f);
 
-        test_unordered_map(insert_kvs, delete_kvs);
+        test_unordered_map(insert_kvs, delete_kvs, default_cap/2);
 
         test_correctness(insert_kvs, delete_kvs, kvs);
 

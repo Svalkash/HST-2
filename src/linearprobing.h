@@ -8,16 +8,13 @@ struct KeyValue
 
 struct HashTable {
     KeyValue *hashtable;
-    uint32_t *size;
+    uint32_t *size; // occupied size, stored in GPU mem for better access
+    uint32_t capacity; // max capacity (in key-value pairs)
 };
-
-const uint32_t kHashTableCapacity = 128 * 1024 * 1024;
-
-const uint32_t kNumKeyValues = kHashTableCapacity / 2;
 
 const uint32_t kEmpty = 0xffffffff;
 
-HashTable create_hashtable();
+HashTable create_hashtable(uint32_t capacity = 128 * 1024 * 1024);
 
 void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs);
 
