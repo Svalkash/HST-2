@@ -86,7 +86,8 @@ void test_correctness(std::vector<KeyValue>, std::vector<KeyValue>, std::vector<
 
 int main() 
 {
-    uint32_t default_cap = 128 * 1024 * 1024;
+    uint32_t default_cap = 1024 * 1024;
+    uint32_t kv_size = default_cap * 32;
     // To recreate the same random numbers across runs of the program, set seed to a specific
     // number instead of a number from random_device
     std::random_device rd;
@@ -99,8 +100,8 @@ int main()
     {
         printf("Initializing keyvalue pairs with random numbers...\n");
 
-        std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, default_cap/2);
-        std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, default_cap/4);
+        std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, kv_size);
+        std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, kv_size/2);
 
         // Begin test
         printf("Testing insertion/deletion of %d/%d elements into GPU hash table...\n",
@@ -108,10 +109,10 @@ int main()
 
         Time timer = start_timer();
 
-        HashTable pHashTable = create_hashtable();
+        HashTable pHashTable = create_hashtable(default_cap);
 
         // Insert items into the hash table
-        const uint32_t num_insert_batches = 16;
+        const uint32_t num_insert_batches = 8*kv_size/default_cap;
         uint32_t num_inserts_per_batch = (uint32_t)insert_kvs.size() / num_insert_batches;
         for (uint32_t i = 0; i < num_insert_batches; i++)
         {

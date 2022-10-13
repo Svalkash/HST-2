@@ -29,7 +29,7 @@ HashTable create_hashtable(uint32_t capacity)
     cudaMemset(size, 0x0, sizeof(uint32_t));
 
     uint32_t size1;
-    cudaMemcpy(size, &size1, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&size1, size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
     printf("    space used: %d\n", size1);
     printf("    base cap: %d\n", capacity);
 
@@ -98,8 +98,9 @@ void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
     printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
         num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
+    uint32_t size;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("    space used: %d (%f%%)\n", size, (float)size/ht.capacity);
+    printf("    space used: %d (%f%%)\n", size, (float)size/ht.capacity*100.0);
 
     cudaFree(device_kvs);
 }
@@ -317,7 +318,7 @@ __global__ void gpu_hashtable_move(HashTable ht, HashTable new_ht)
  
 void resize_hashtable(HashTable& ht, uint32_t resize_k)
 {
-    HashTable new_ht = { nullptr, nullptr, ht.capacity * resize_k }
+    HashTable new_ht = { nullptr, nullptr, ht.capacity * resize_k };
 
     // Allocate mem for the new table
     cudaMalloc(&new_ht.hashtable, sizeof(KeyValue) * new_ht.capacity);
@@ -332,7 +333,7 @@ void resize_hashtable(HashTable& ht, uint32_t resize_k)
     // Have CUDA calculate the thread block size
     int mingridsize;
     int threadblocksize;
-    cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_resize, 0, 0);
+    cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_move, 0, 0);
 
     // Create events for GPU timing
     cudaEvent_t start, stop;
@@ -349,15 +350,14 @@ void resize_hashtable(HashTable& ht, uint32_t resize_k)
 
     cudaEventSynchronize(stop);
 
+    uint32_t size;
+    cudaMemcpy(&size, new_ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     printf("    GPU moved %d items in %f ms\n", 
-        *new_ht.size, milliseconds);
-
-    uint32_t size;
-    cudaMemcpy(&size, new_ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+        size, milliseconds);
     printf("    resized, new capacity is %d\n", new_ht.capacity);
-    printf("    space used: %d (%f%%)\n", size, (float)size/new_ht.capacity);
+    printf("    space used: %d (%f%%)\n", size, (float)size/new_ht.capacity*100.0);
 
     //nuke the old table and reassign it to the new one
     cudaFree(ht.hashtable);
@@ -365,7 +365,7 @@ void resize_hashtable(HashTable& ht, uint32_t resize_k)
     ht = new_ht;
 }
 
-void check_hashtable(HashTable &ht, float resize_thres = 0.7) {
+void check_hashtable(HashTable &ht, float resize_thres) {
     if (resize_thres > 1.0) return;
     uint32_t size;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
