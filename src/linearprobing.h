@@ -25,3 +25,5 @@ void delete_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs);
 std::vector<KeyValue> iterate_hashtable(HashTable& ht);
 
 void destroy_hashtable(HashTable& ht);
+
+void resize_hashtable(HashTable& ht, uint32_t resize_k = 2);

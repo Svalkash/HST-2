@@ -280,3 +280,80 @@ void destroy_hashtable(HashTable &ht)
     cudaFree(ht.hashtable);
     cudaFree(ht.size);
 }
+
+// Move the original kv into the new one
+__global__ void gpu_hashtable_move(HashTable ht, HashTable new_ht)
+{
+    unsigned int threadid = blockIdx.x*blockDim.x + threadIdx.x;
+    if (threadid < ht.capacity)
+    {
+        uint32_t key = ht.hashtable[threadid].key;
+        uint32_t value = ht.hashtable[threadid].value;
+        uint32_t slot = hash(key, new_ht.capacity);
+        if (key == kEmpty || value == kEmpty) return; //skip empty and deleted
+
+        //copied from the basic insertion
+        while (true)
+        {
+            uint32_t prev = atomicCAS(&new_ht.hashtable[slot].key, kEmpty, key);
+            if (prev == kEmpty)
+                atomicAdd(new_ht.size, 1); //new key space used
+            if (prev == kEmpty || prev == key)
+            {
+                new_ht.hashtable[slot].value = value;
+                return;
+            }
+
+            slot = (slot + 1) & (new_ht.capacity-1);
+        }
+    }
+}
+ 
+void resize_hashtable(HashTable& ht, uint32_t resize_k)
+{
+    HashTable new_ht = { nullptr, nullptr, ht.capacity * resize_k }
+
+    // Allocate mem for the new table
+    cudaMalloc(&new_ht.hashtable, sizeof(KeyValue) * new_ht.capacity);
+    cudaMalloc(&new_ht.size, sizeof(uint32_t));
+
+    // Initialize new table to empty
+    static_assert(kEmpty == 0xffffffff, "memset expected kEmpty=0xffffffff");
+    cudaMemset(new_ht.hashtable, 0xff, sizeof(KeyValue) * new_ht.capacity);
+    cudaMemset(new_ht.size, 0x0, sizeof(uint32_t));
+
+    // Now copy NON-empty keys and their values
+    // Have CUDA calculate the thread block size
+    int mingridsize;
+    int threadblocksize;
+    cudaOccupancyMaxPotentialBlockSize(&mingridsize, &threadblocksize, gpu_hashtable_resize, 0, 0);
+
+    // Create events for GPU timing
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+
+    // Insert all the keys into the hash table
+    int gridsize = (ht.capacity + threadblocksize - 1) / threadblocksize;
+    gpu_hashtable_move<<<gridsize, threadblocksize>>>(ht, new_ht);
+
+    cudaEventRecord(stop);
+
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    printf("    GPU moved %d items in %f ms\n", 
+        *new_ht.size, milliseconds);
+
+    uint32_t size;
+    cudaMemcpy(&size, new_ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    printf("    space used: %d\n", size);
+
+    //nuke the old table and reassign it to the new one
+    cudaFree(ht.hashtable);
+    cudaFree(ht.size);
+    ht = new_ht;
+}
