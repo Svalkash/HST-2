@@ -19,7 +19,7 @@ Atomic operations are used to insert key/value pairs into the hash table on mult
 of development, but could easily be ported to HLSL or GLSL. 64 bit keys and/or values could be supported using 64 bit
 atomics.
 
-Resizing: **WIP**
+[Resizing](RESIZING.md)
 
 The code was kept simple for readability. There are many optimizations that can be done, but they muddy the waters. I
 wanted to illustrate the basic design of the lock free hash table and how it can be implemented on a GPU.
