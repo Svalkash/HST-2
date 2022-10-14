@@ -15,7 +15,7 @@ __device__ uint32_t hash(uint32_t k, uint32_t mod)
 }
 
 // Create a hash table. For linear probing, this is just an array of KeyValues
-HashTable create_hashtable(uint32_t capacity) 
+HashTable create_hashtable(uint32_t capacity, float resize_thres) 
 {
     // Allocate memory
     KeyValue* hashtable;
@@ -30,10 +30,11 @@ HashTable create_hashtable(uint32_t capacity)
 
     uint32_t size1;
     cudaMemcpy(&size1, size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("    space used: %d\n", size1);
-    printf("    base cap: %d\n", capacity);
+    // printf("    space used: %d\n", size1);
+    // printf("    base cap: %d\n", capacity);
+    // printf("    resize thres: %f\n", resize_thres);
 
-    return { hashtable, size, capacity };
+    return { hashtable, size, capacity, resize_thres };
 }
 
 // Insert the key/values in kvs into the hashtable
@@ -62,10 +63,10 @@ __global__ void gpu_hashtable_insert(HashTable ht, const KeyValue* kvs, unsigned
     }
 }
  
-void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
+float insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
 {
     //first check the size and capacity
-    check_hashtable(ht);
+    float crtime = check_hashtable(ht); // check/resize time
 
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
@@ -95,14 +96,15 @@ void insert_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     float seconds = milliseconds / 1000.0f;
-    printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
-        num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+    // printf("    GPU inserted %d items in %f ms (%f million keys/second)\n", 
+    //     num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
     uint32_t size;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("    space used: %d (%f%%)\n", size, (float)size/ht.capacity*100.0);
+    // printf("    space used: %d (%f%%)\n", size, (float)size/ht.capacity*100.0);
 
     cudaFree(device_kvs);
+    return crtime + milliseconds;
 }
 
 // Lookup keys in the hashtable, and return the values
@@ -131,10 +133,10 @@ __global__ void gpu_hashtable_lookup(HashTable ht, KeyValue* kvs, unsigned int n
     }
 }
 
-void lookup_hashtable(HashTable& ht, KeyValue* kvs, uint32_t num_kvs)
+float lookup_hashtable(HashTable& ht, KeyValue* kvs, uint32_t num_kvs)
 {
     //first check the size and capacity
-    check_hashtable(ht);
+    float crtime = check_hashtable(ht); // check/resize time
 
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
@@ -164,10 +166,11 @@ void lookup_hashtable(HashTable& ht, KeyValue* kvs, uint32_t num_kvs)
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     float seconds = milliseconds / 1000.0f;
-    printf("    GPU lookup %d items in %f ms (%f million keys/second)\n",
-        num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+    // printf("    GPU lookup %d items in %f ms (%f million keys/second)\n",
+    //     num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
     cudaFree(device_kvs);
+    return crtime + milliseconds;
 }
 
 // Delete each key in kvs from the hash table, if the key exists
@@ -197,7 +200,7 @@ __global__ void gpu_hashtable_delete(HashTable ht, const KeyValue* kvs, unsigned
     }
 }
 
-void delete_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
+float delete_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
 {
     // Copy the keyvalues to the GPU
     KeyValue* device_kvs;
@@ -227,10 +230,11 @@ void delete_hashtable(HashTable& ht, const KeyValue* kvs, uint32_t num_kvs)
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
     float seconds = milliseconds / 1000.0f;
-    printf("    GPU delete %d items in %f ms (%f million keys/second)\n",
-        num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
+    // printf("    GPU delete %d items in %f ms (%f million keys/second)\n",
+    //     num_kvs, milliseconds, num_kvs / (double)seconds / 1000000.0f);
 
     cudaFree(device_kvs);
+    return milliseconds;
 }
 
 // Iterate over every item in the hashtable; return non-empty key/values
@@ -316,9 +320,9 @@ __global__ void gpu_hashtable_move(HashTable ht, HashTable new_ht)
     }
 }
  
-void resize_hashtable(HashTable& ht, uint32_t resize_k)
+float resize_hashtable(HashTable& ht, uint32_t resize_k)
 {
-    HashTable new_ht = { nullptr, nullptr, ht.capacity * resize_k };
+    HashTable new_ht = { nullptr, nullptr, ht.capacity * resize_k, ht.resize_thres };
 
     // Allocate mem for the new table
     cudaMalloc(&new_ht.hashtable, sizeof(KeyValue) * new_ht.capacity);
@@ -354,21 +358,22 @@ void resize_hashtable(HashTable& ht, uint32_t resize_k)
     cudaMemcpy(&size, new_ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("    GPU moved %d items in %f ms\n", 
-        size, milliseconds);
-    printf("    resized, new capacity is %d\n", new_ht.capacity);
-    printf("    space used: %d (%f%%)\n", size, (float)size/new_ht.capacity*100.0);
+    // printf("    GPU moved %d items in %f ms\n", 
+    //     size, milliseconds);
+    // printf("    resized, new capacity is %d\n", new_ht.capacity);
+    // printf("    space used: %d (%f%%)\n", size, (float)size/new_ht.capacity*100.0);
 
     //nuke the old table and reassign it to the new one
     cudaFree(ht.hashtable);
     cudaFree(ht.size);
     ht = new_ht;
+    return milliseconds;
 }
 
-void check_hashtable(HashTable &ht, float resize_thres) {
-    if (resize_thres > 1.0) return;
+float check_hashtable(HashTable &ht) {
     uint32_t size;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    if (size > ht.capacity * resize_thres)
-        resize_hashtable(ht);
+    if (size > ht.capacity * ht.resize_thres)
+        return resize_hashtable(ht);
+    else return 0;
 }

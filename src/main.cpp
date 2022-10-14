@@ -84,8 +84,7 @@ void test_unordered_map(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> 
 
 void test_correctness(std::vector<KeyValue>, std::vector<KeyValue>, std::vector<KeyValue>);
 
-int main() 
-{
+void default_test() {
     uint32_t default_cap = 1024 * 1024;
     uint32_t kv_size = default_cap * 32;
     // To recreate the same random numbers across runs of the program, set seed to a specific
@@ -144,6 +143,73 @@ int main()
 
         printf("Success\n");
     }
+}
 
+void csv_test() {
+    uint32_t default_cap = 1024 * 1024;
+    float min_thres = 0.3;
+    float max_thres = 0.9;
+    float step_thres = 0.05;
+    uint32_t iter_per_thres = 10;
+
+    uint32_t kv_size = default_cap * 16;
+    // To recreate the same random numbers across runs of the program, set seed to a specific
+    // number instead of a number from random_device
+    std::random_device rd;
+    uint32_t seed = rd();
+    std::mt19937 rnd(seed);  // mersenne_twister_engine
+    FILE *f = fopen("timing.csv", "w");
+
+    printf("Random number generator seed = %u\n", seed);
+
+    // Insert items into the hash table
+    const uint32_t num_batches = 8*kv_size/default_cap;
+
+    for (float thres = min_thres; thres < max_thres; thres += step_thres) {
+        float round_sum = 0;
+        float total_sum = 0;
+        printf("Testing resize threshold = %f\n", thres);
+        for (uint32_t iter = 0; iter <= iter_per_thres; ++iter) {
+            fprintf(f, "%f, THRES, ", thres);
+            std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, kv_size);
+            std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, kv_size/2);
+            uint32_t num_inserts_per_batch = (uint32_t)insert_kvs.size() / num_batches;
+            uint32_t num_deletes_per_batch = (uint32_t)delete_kvs.size() / num_batches;
+
+            Time timer = start_timer();
+
+            HashTable pHashTable = create_hashtable(default_cap, thres);
+
+            for (uint32_t i = 0; i < num_batches; i++)
+            {
+                float round_time = insert_hashtable(pHashTable, insert_kvs.data() + i * num_inserts_per_batch, num_inserts_per_batch)
+                    + delete_hashtable(pHashTable, delete_kvs.data() + i * num_deletes_per_batch, num_deletes_per_batch);
+                if (iter == 0) {
+                    fprintf(f, "%f, ", round_time);
+                    round_sum += round_time;
+                }
+            }
+            if (iter > 0) {
+                // Get all the key-values from the hash table
+                destroy_hashtable(pHashTable);
+                double milliseconds = get_elapsed_time(timer);
+                double seconds = milliseconds / 1000.0f;
+                total_sum += milliseconds;
+            }
+        }
+        float round_avg = round_sum / num_batches;
+        float total_avg = total_sum / iter_per_thres;
+
+        // Summarize results
+        printf("AVERAGE round time: %f ms\n", round_avg);
+        printf("AVERAGE total time: %f ms\n", total_avg);
+        fprintf(f, "AVG, %lf, SUM, %lf\n", round_avg, total_avg);
+    }
+    fclose(f);
+}
+
+int main() 
+{
+    csv_test();
     return 0;
 }
