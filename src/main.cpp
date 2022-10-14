@@ -172,9 +172,9 @@ void csv_test()
         float round_sum = 0;
         float total_sum = 0;
         printf("Testing resize threshold = %f\n", thres);
+        fprintf(f, "%f, THRES, ", thres);
         for (uint32_t iter = 0; iter <= iter_per_thres; ++iter)
         {
-            fprintf(f, "%f, THRES, ", thres);
             std::vector<KeyValue> insert_kvs = generate_random_keyvalues(rnd, kv_size);
             std::vector<KeyValue> delete_kvs = shuffle_keyvalues(rnd, insert_kvs, kv_size / 2);
             uint32_t num_inserts_per_batch = (uint32_t)insert_kvs.size() / num_batches;

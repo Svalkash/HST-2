@@ -371,12 +371,15 @@ float resize_hashtable(HashTable &ht, uint32_t resize_k)
     return milliseconds;
 }
 
-float check_hashtable(HashTable &ht)
+float check_hashtable(HashTable &ht, uint32_t new_space, uint32_t resize_k)
 {
     uint32_t size;
+    uint32_t final_resize_k = 1;
     cudaMemcpy(&size, ht.size, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    if (size > ht.capacity * ht.resize_thres)
-        return resize_hashtable(ht);
-    else
+    while (size + new_space > ht.capacity * final_resize_k * ht.resize_thres)
+        final_resize_k *= resize_k;
+    if (final_resize_k == 1)
         return 0;
+    else
+        return resize_hashtable(ht);
 }

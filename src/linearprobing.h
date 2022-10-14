@@ -30,4 +30,4 @@ void destroy_hashtable(HashTable &ht);
 
 float resize_hashtable(HashTable &ht, uint32_t resize_k = 2);
 
-float check_hashtable(HashTable &ht);
+float check_hashtable(HashTable &ht, uint32_t new_space = 0, uint32_t resize_k = 2); // new_space for the values inserted
