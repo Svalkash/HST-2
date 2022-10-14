@@ -16,7 +16,7 @@ void test_correctness(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> de
         if (i % 10000000 == 0)
             printf("    Verifying %d/%d\n", i, (uint32_t)kvs.size());
 
-        KeyValue* node = &kvs[i];
+        KeyValue *node = &kvs[i];
         if (unique_keys.find(node->key) != unique_keys.end())
         {
             printf("Duplicate key found in GPU hash table at slot %d\n", i);
@@ -35,7 +35,7 @@ void test_correctness(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> de
         auto iter = all_kvs_map.find(insert_kvs[i].key);
         if (iter == all_kvs_map.end())
         {
-            all_kvs_map[insert_kvs[i].key] = std::vector<uint32_t>({ insert_kvs[i].value });
+            all_kvs_map[insert_kvs[i].key] = std::vector<uint32_t>({insert_kvs[i].value});
         }
         else
         {
@@ -74,7 +74,7 @@ void test_correctness(std::vector<KeyValue> insert_kvs, std::vector<KeyValue> de
             exit(-1);
         }
 
-        std::vector<uint32_t>& values = iter->second;
+        std::vector<uint32_t> &values = iter->second;
         if (std::find(values.begin(), values.end(), kvs[i].value) == values.end())
         {
             printf("Hashtable value not found in original list\n");
